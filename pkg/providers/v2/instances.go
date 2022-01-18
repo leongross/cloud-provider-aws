@@ -207,6 +207,37 @@ func nodeAddressesForInstance(instance *ec2.Instance) ([]v1.NodeAddress, error) 
 	}
 
 	addresses := []v1.NodeAddress{}
+	ses, err := session.NewSession(&aws.Config{
+		//TODO: don't pin region
+		Region: aws.String("us-east-2")},
+	)
+
+	if err != nil {
+		fmt.Errorf("error creating aws session: %w", err)
+		return nil, err
+	}
+
+	svc := ec2.New(ses)
+	out, errtag := svc.DescribeTags(&ec2.DescribeTagsInput{ // not sure if these filters work
+		DryRun:     aws.Bool(false),
+		MaxResults: aws.Int64(1000),
+		Filters: []*ec2.Filter{
+			newEc2Filter("vpn-ip", "tag:vpn-ip"),
+		},
+	})
+
+	if errtag != nil && out != nil {
+		fmt.Errorf("error creating aws session: %w", errtag)
+		return nil, errtag
+	}
+
+	for _, t := range out.Tags {
+		if *t.Key == "vpn-ip" {
+			addresses = append(addresses, v1.NodeAddress{Type: v1.NodeInternalIP, Address: *t.Value})
+			break
+		}
+	}
+
 	for _, networkInterface := range instance.NetworkInterfaces {
 		// skip network interfaces that are not currently in use
 		if aws.StringValue(networkInterface.Status) != ec2.NetworkInterfaceStatusInUse {
